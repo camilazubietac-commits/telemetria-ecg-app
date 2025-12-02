@@ -10,8 +10,8 @@ st.set_page_config(page_title="Vitals Link", layout="wide")
 st.markdown("""
 <style>
 body { background-color: #f0f8ff; font-family: 'Arial', sans-serif; }
-.big-title { font-size: 60px; font-weight: bold; color: #228B22; text-align: center; margin-bottom: 0; }
-.sub-title { font-size: 20px; color: #000000; text-align: center; margin-top: 0; }
+.big-title { font-size: 120px; font-weight: bold; color: #228B22; text-align: center; margin-bottom: 0; }
+.sub-title { font-size: 80px; color: #000000; text-align: center; margin-top: 0; }
 .hr-big { font-size: 40px; color: #228B22; text-align: center; margin: 20px 0; }
 .report-title { font-size: 30px; color: #228B22; }
 .report-table { border-collapse: collapse; width: 100%; }
