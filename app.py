@@ -5,6 +5,14 @@ import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+@st.cache_data(ttl=60)
+def process_data(data_str):
+    try:
+        data = json.loads(data_str)
+        return data
+    except:
+        return None
+
 # ==================== CONFIGURACIÓN INICIAL ====================
 st.set_page_config(page_title="Vitals Link", layout="wide")
 
@@ -66,6 +74,16 @@ def recibir(d: DatosECG):
     return {"status": "ok"}
 
 # ==================== INTERFAZ ====================
+# Recibir GET de ESP32
+if 'data' in st.query_params:
+    data_str = st.query_params['data'][0]
+    data = process_data(data_str)
+    if data:
+        # Procesar como antes
+        st.session_state.data["I"] = data.get("derivacion_I", [0]*100)
+        # ... resto del procesamiento
+        st.rerun()
+
 col1, col2, col3 = st.columns(3)
 with col1:
     st.subheader("Derivación I")
