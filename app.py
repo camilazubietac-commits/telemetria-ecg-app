@@ -24,22 +24,24 @@ st.markdown("""
      background-image: url('https://i.imgur.com/5fX9X8k.png'); background-size: cover; z-index:-1;"></div>
 """, unsafe_allow_html=True)
 
-# ==================== TÍTULO Y SUBTÍTULO ENORME ====================
-# ==================== TÍTULO Y SUBTÍTULO QUE CAMBIAN DE COLOR SEGÚN DIAGNÓSTICO ====================
+# ==================== TÍTULO Y SUBTÍTULO QUE CAMBIAN DE COLOR (SEGURIDAD TOTAL) ====================
 
-# Calculamos el color según la patología más probable
-idx = np.argmax(st.session_state.data["probs"])
-colores = ["#d32f2f", "#f57c00", "#c62828", "#2e7d32"]   # AFF, ARR, CHF, NSR
-color_diagnostico = colores[idx]
+# Valor por defecto mientras no hay datos
+if "probs" not in st.session_state.data or len(st.session_state.data["probs"]) == 0:
+    color_diagnostico = "#006400"  # Verde bonito por defecto
+else:
+    idx = np.argmax(st.session_state.data["probs"])
+    colores = ["#d32f2f", "#f57c00", "#c62828", "#2e7d32"]  # AFF, ARR, CHF, NSR
+    color_diagnostico = colores[idx]
 
-# TÍTULO GRANDE que cambia de color
+# Título grande
 st.markdown(f'''
 <h1 style="color:{color_diagnostico}; font-size:80px; text-align:center; margin-bottom:0; font-weight:bold;">
 Vitals Link
 </h1>
 ''', unsafe_allow_html=True)
 
-# SUBTÍTULO que también cambia al mismo color
+# Subtítulo
 st.markdown(f'''
 <h3 style="color:{color_diagnostico}; font-size:28px; text-align:center; margin-top:5px; font-weight:normal; opacity:0.9;">
 El guardián digital de tu ritmo cardíaco, conectado y seguro.
