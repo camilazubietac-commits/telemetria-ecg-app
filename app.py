@@ -39,9 +39,14 @@ if "data" not in st.session_state:
 query = st.query_params
 
 # 1. BPM directo por parámetro
+# RECIBE BPM DESDE ESP32 (con embedded=true o sin él)
 if "hbpermin" in query:
     try:
-        st.session_state.data["hr"] = int(query["hbpermin"])
+        valor = query["hbpermin"]
+        if isinstance(valor, list):
+            valor = valor[0]
+        st.session_state.data["hr"] = int(float(valor))
+        st.rerun()  # ← ESTA LÍNEA ES LA QUE FALTABA
     except:
         pass
 
