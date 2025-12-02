@@ -85,7 +85,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.subheader("Derivación I")
     st.line_chart(st.session_state.data["I"], height=220, use_container_width=True)
-with col |2:
+with col2:
     st.subheader("Derivación II")
     st.line_chart(st.session_state.data["II"], height=220, use_container_width=True)
 with col3:
