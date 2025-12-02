@@ -1,80 +1,84 @@
 import streamlit as st
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-
-# ←←←←← El modelo ML está aquí: carga tu archivo .pkl (que copiarás en la carpeta)
-modelo = joblib.load("modelo_ecg_random_forest_final.pkl")
-
-st.set_page_config(page_title="ECG EN VIVO", layout="wide")
-st.title("ECG + Diagnóstico en Tiempo Real 🩺")
-st.write("Abre esta página desde tu celular. Actualiza cada 5-7 segundos.")
-
-# Variables que se actualizan cuando llegan datos del ESP32
-if "ecg" not in st.session_state:
-    st.session_state.ecg = [0] * 1000  # Buffer para la señal ECG
-    st.session_state.hr = 0  # Frecuencia cardíaca inicial
-    st.session_state.probs = [25, 25, 25, 25]  # Probabilidades iniciales
-
-# Parte de recepción de datos (FastAPI dentro de Streamlit)
 from fastapi import FastAPI
 from pydantic import BaseModel
+
+# ---- ESTILO BONITO ----
+st.set_page_config(page_title="Telemetría ECG", layout="wide")
+st.markdown("""
+<style>
+.big-font {font-size:50px !important; font-weight: bold; color: #1E88E5;}
+.medium-font {font-size:25px !important;}
+.css-1d391kg {padding-top: 2rem; padding-bottom: 2rem;}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🫀 Telemetría ECG en Tiempo Real")
+st.markdown("**Camila Zubieta** • Actualización cada 6 segundos • Abre desde tu celular")
+
+# Cargar modelo
+modelo = joblib.load("modelo_ecg_random_forest_final.pkl")
+CLASES = ['Fibrilación (AFF)', 'Arritmia (ARR)', 'Insuficiencia (CHF)', 'Normal (NSR)']
+
+# Variables globales
+if "data" not in st.session_state:
+    st.session_state.data = {"I": [0]*600, "II": [0]*600, "III": [0]*600, 
+                            "hr": 0, "features": {}, "probs": [25,25,25,25]}
 
 api = FastAPI()
 
 class DatosECG(BaseModel):
-    ecg: list  # El array de la señal ECG del ESP32
+    derivacion_I: list
+    derivacion_II: list
+    derivacion_III: list
+    features: dict
 
 @api.post("/predict")
-def recibir(datos: DatosECG):
-    # Guardar la señal recibida
-    st.session_state.ecg = datos.ecg[-1000:]  # Últimos 1000 valores
+def recibir(d: DatosECG):
+    st.session_state.data["I"] = d.derivacion_I[-600:]
+    st.session_state.data["II"] = d.derivacion_II[-600:]
+    st.session_state.data["III"] = d.derivacion_III[-600:]
+    st.session_state.data["features"] = d.features
+    st.session_state.data["hr"] = d.features.get("hbpermin", 0)
+    
+    df_feat = pd.DataFrame([d.features])
+    probs = modelo.predict_proba(df_feat)[0] * 100
+    st.session_state.data["probs"] = probs.round(1).tolist()
+    return {"ok": True}
 
-    # Calcular frecuencia cardíaca simple (conteo de cruces por umbral)
-    señal = np.array(datos.ecg)
-    cruces = len(np.where((señal[:-1] < 1.65) & (señal[1:] > 1.65))[0])
-    st.session_state.hr = round(cruces * 12)  # 5 segundos de datos → x12 para bpm
-
-    # Features mínimas para el modelo ML (esto se conecta con tu CSV de training)
-    # Aquí usamos valores placeholders; mañana lo mejoramos con features reales de la señal
-    features = {
-        'hbpermin': max(st.session_state.hr, 40),  # Frecuencia cardíaca
-        'RRmean': 60000 / max(st.session_state.hr, 40),  # Media de intervalos RR
-        'SDRR': 60, 'RMSSD': 45, 'pNN50': 8,  # Variabilidad
-        'QRSseg': 0.1, 'QTseg': 0.38, 'PRseg': 0.16,  # Duraciones
-        'Pseg': 0.11, 'Tseg': 0.22, 'QRSarea': 1.1  # Amplitudes y áreas
-    }
-
-    # Ejecutar el modelo ML
-    df = pd.DataFrame([features])
-    prob = modelo.predict_proba(df)[0] * 100  # Calcula % para cada clase
-    clases = ['Fibrilación (AFF)', 'Arritmia (ARR)', 'Insuf. Cardíaca (CHF)', 'Normal (NSR)']
-
-    st.session_state.probs = prob.round(1).tolist()  # Guardar probabilidades
-    return {"status": "datos recibidos OK"}
-
-# === Interfaz gráfica (lo que ves en el navegador) ===
-col1, col2 = st.columns([2,1])
+# ---- INTERFAZ ----
+col1, col2 = st.columns([3, 2])
 
 with col1:
-    st.line_chart(st.session_state.ecg, height=350)
-    st.caption("Señal ECG en tiempo real (onda del corazón)")
+    st.subheader("Derivaciones ECG")
+    st.line_chart({
+        "Derivación I": st.session_state.data["I"],
+        "Derivación II": st.session_state.data["II"],
+        "Derivación III": st.session_state.data["III"]
+    }, height=400)
 
 with col2:
-    st.metric("Frecuencia Cardíaca", f"{st.session_state.hr} bpm")
+    st.markdown(f'<p class="big-font">{st.session_state.data["hr"]:.0f} <small>bpm</small></p>', 
+                unsafe_allow_html=True)
+    st.markdown("**Frecuencia Cardíaca**")
 
-    if sum(st.session_state.probs) > 0:
-        df_bar = pd.DataFrame({
-            "Condición": ['Fibrilación (AFF)', 'Arritmia (ARR)', 'Insuf. Cardíaca (CHF)', 'Normal (NSR)'],
-            "Probabilidad %": st.session_state.probs
-        })
-        st.bar_chart(df_bar.set_index("Condición"), height=350)
+    probs = st.session_state.data["probs"]
+    df_prob = pd.DataFrame({"Condición": CLASES, "%": probs})
+    st.bar_chart(df_prob.set_index("Condición"), height=300)
+    
+    max_idx = np.argmax(probs)
+    color = ["⚠️", "⚠️", "⚠️", "✅"][max_idx]
+    st.markdown(f"### {color} **DIAGNÓSTICO:** {CLASES[max_idx]}")
+    st.markdown(f"**Confianza:** {probs[max_idx]:.1f}%")
 
-        mejor = np.argmax(st.session_state.probs)
-        st.success(f"**DIAGNÓSTICO PRELIMINAR: {df_bar['Condición'][mejor]}**")
-        st.write(f"**Confianza: {st.session_state.probs[mejor]:.1f}%**")
+st.subheader("12 Features evaluados")
+if st.session_state.data["features"]:
+    feat_df = pd.DataFrame([st.session_state.data["features"]]).T
+    feat_df.columns = ["Valor"]
+    st.table(feat_df.style.format("{:.3f}"))
 
-# Iniciar el servidor (recepción + interfaz)
 import uvicorn
 if __name__ == "__main__":
     import threading
