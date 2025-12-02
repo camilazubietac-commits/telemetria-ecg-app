@@ -2,122 +2,77 @@ import streamlit as st
 import joblib
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI
-from pydantic import BaseModel
+import json
 
-@st.cache_data(ttl=60)
-def process_data(data_str):
-    try:
-        data = json.loads(data_str)
-        return data
-    except:
-        return None
+# ==================== CARGA DEL MODELO ====================
+@st.cache_resource
+def cargar_modelo():
+    return joblib.load("modelo_ecg_random_forest_final.pkl")
 
-# ==================== CONFIGURACIÓN INICIAL ====================
+modelo = cargar_modelo()
+CLASES = ['Fibrilación Auricular', 'Arritmia', 'Insuficiencia Cardíaca', 'Ritmo Sinusal Normal']
+
+# ==================== CONFIGURACIÓN ====================
 st.set_page_config(page_title="Vitals Link", layout="wide")
-
-# CSS
 st.markdown("""
 <style>
-    .big-title {font-size: 80px !important; font-weight: bold; text-align: center; margin-bottom: 0px;}
-    .sub-title {font-size: 28px !important; text-align: center; margin-top: 5px; font-weight: normal; opacity: 0.9;}
+    .big-title {font-size: 80px !important; font-weight: bold; text-align: center;}
+    .sub-title {font-size: 28px !important; text-align: center; opacity: 0.9;}
     .hr-big {font-size: 70px !important; text-align: center; font-weight: bold;}
     body {background: linear-gradient(135deg, #e8f5e9, #f1f8e8);}
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== ESTADO INICIAL SEGURO ====================
+# ==================== ESTADO INICIAL ====================
 if "data" not in st.session_state:
     st.session_state.data = {
-        "I": [0]*600,
-        "II": [0]*600,
-        "III": [0]*600,
-        "hr": 0,
-        "features": {},
-        "probs": [25, 25, 25, 25]  # valor por defecto
+        "I": [0]*600, "II": [0]*600, "III": [0]*600,
+        "hr": 0, "features": {}, "probs": [25,25,25,25]
     }
 
-# ==================== COLOR SEGÚN DIAGNÓSTICO (sin errores) ====================
-idx = np.argmax(st.session_state.data["probs"])
-colores = ["#d32f2f", "#f57c00", "#c62828", "#2e7d32"]  # AFF, ARR, CHF, NSR
-color_actual = colores[idx]
+# ==================== RECEPTOR UNIVERSAL (GET + POST) ====================
+query = st.query_params
 
-# Título y subtítulo (ahora sí funciona desde el segundo 1)
-st.markdown(f'<h1 class="big-title" style="color:{color_actual};">Vitals Link</h1>', unsafe_allow_html=True)
-st.markdown(f'<h3 class="sub-title" style="color:{color_actual};">El guardián digital de tu ritmo cardíaco, conectado y seguro.</h3>', unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
+# 1. Recibe BPM directo
+if "hbpermin" in query:
+    st.session_state.data["hr"] = int(query["hbpermin"])
 
-# ==================== CARGA DEL MODELO ====================
-modelo = joblib.load("modelo_ecg_random_forest_final.pkl")
-CLASES = ['Fibrilación Auricular', 'Arritmia', 'Insuficiencia Cardíaca', 'Ritmo Sinusal Normal']
-
-# ==================== API ====================
-api = FastAPI()
-
-class DatosECG(BaseModel):
-    derivacion_I: list
-    derivacion_II: list
-    derivacion_III: list
-    features: dict
-
-@api.post("/predict")
-def recibir(d: DatosECG):
-    st.session_state.data["I"] = d.derivacion_I[-600:]
-    st.session_state.data["II"] = d.derivacion_II[-600:]
-    st.session_state.data["III"] = d.derivacion_III[-600:]
-    st.session_state.data["hr"] = round(d.features.get("hbpermin", 0))
-    st.session_state.data["features"] = d.features
-    
-    df_feat = pd.DataFrame([d.features])
-    probs = modelo.predict_proba(df_feat)[0] * 100
-    st.session_state.data["probs"] = probs.round(1).tolist()
-    return {"status": "ok"}
+# 2. Recibe JSON completo (derivaciones + features)
+if "data" in query:
+    try:
+        data = json.loads(query["data"])
+        st.session_state.data["I"]   = data.get("derivacion_I",  st.session_state.data["I"])[:600]
+        st.session_state.data["II"]  = data.get("derivacion_II", st.session_state.data["II"])[:600]
+        st.session_state.data["III"] = data.get("derivacion_III",st.session_state.data["III"])[:600]
+        if "features" in data:
+            st.session_state.data["features"] = data["features"]
+            st.session_state.data["hr"] = round(data["features"].get("hbpermin", st.session_state.data["hr"]))
+            df_feat = pd.DataFrame([data["features"]])
+            probs = modelo.predict_proba(df_feat)[0] * 100
+            st.session_state.data["probs"] = probs.round(1).tolist()
+        st.rerun()
+    except:
+        pass
 
 # ==================== INTERFAZ ====================
-# Recibir GET de ESP32
-if 'data' in st.query_params:
-    data_str = st.query_params['data'][0]
-    data = process_data(data_str)
-    if data:
-        # Procesar como antes
-        st.session_state.data["I"] = data.get("derivacion_I", [0]*100)
-        # ... resto del procesamiento
-        st.rerun()
+idx = np.argmax(st.session_state.data["probs"])
+colores = ["#d32f2f", "#f57c00", "#c62828", "#2e7d32"]
+color_actual = colores[idx]
+
+st.markdown(f'<h1 class="big-title" style="color:{color_actual};">Vitals Link</h1>', unsafe_allow_html=True)
+st.markdown(f'<h3 class="sub-title" style="color:{color_actual};">Monitoreo cardíaco en tiempo real</h3>', unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
-with col1:
-    st.subheader("Derivación I")
-    st.line_chart(st.session_state.data["I"], height=220, use_container_width=True)
-with col2:
-    st.subheader("Derivación II")
-    st.line_chart(st.session_state.data["II"], height=220, use_container_width=True)
-with col3:
-    st.subheader("Derivación III")
-    st.line_chart(st.session_state.data["III"], height=220, use_container_width=True)
+with col1: st.subheader("Derivación I");  st.line_chart(st.session_state.data["I"], height=220)
+with col2: st.subheader("Derivación II"); st.line_chart(st.session_state.data["II"], height=220)
+with col3: st.subheader("Derivación III");st.line_chart(st.session_state.data["III"], height=220)
 
-st.markdown(f'<p class="hr-big" style="color:{color_actual};">{st.session_state.data["hr"]} <small style="font-size:50px;">bpm</small></p>', unsafe_allow_html=True)
+st.markdown(f'<p class="hr-big" style="color:{color_actual};">{st.session_state.data["hr"]} <small>bpm</small></p>', unsafe_allow_html=True)
 
-st.subheader("12 Features Extraídos")
 if st.session_state.data["features"]:
-    feat_df = pd.DataFrame.from_dict(st.session_state.data["features"], orient='index', columns=['Valor'])
-    st.dataframe(feat_df.style.format("{:.4f}"), use_container_width=True)
-else:
-    st.info("Esperando señal del ESP32...")
+    df = pd.DataFrame.from_dict(st.session_state.data["features"], orient='index', columns=['Valor'])
+    st.dataframe(df.style.format("{:.4f}"), use_container_width=True)
 
-st.subheader("Diagnóstico Automático")
-probs = st.session_state.data["probs"]
-idx = np.argmax(probs)
 patologia = CLASES[idx]
-confianza = probs[idx]
-
-colA, colB = st.columns([2, 3])
-with colA:
-    st.markdown(f"<h2 style='color:{color_actual}; text-align:center;'>{patologia}<br>{confianza:.1f}%</h2>", unsafe_allow_html=True)
-with colB:
-    st.write(f"Frecuencia: {st.session_state.data['hr']} bpm | QRS: {st.session_state.data['features'].get('QRSseg',0):.3f}s | SDRR: {st.session_state.data['features'].get('SDRR',0):.3f}")
-
-# ==================== SERVIDOR ====================
-import uvicorn
-if __name__ == "__main__":
-    import threading
-    threading.Thread(target=uvicorn.run, args=(api,), kwargs={"host":"0.0.0.0", "port":8000}).start()
+confianza = st.session_state.data["probs"][idx]
+st.markdown(f"<h2 style='color:{color_actual}; text-align:center;'>{patologia} – {confianza:.1f}%</h2>", unsafe_allow_html=True)
