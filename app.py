@@ -5,63 +5,45 @@ import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-# ==================== ESTILO Y FONDO ====================
+# ==================== CONFIGURACIÓN INICIAL ====================
 st.set_page_config(page_title="Vitals Link", layout="wide")
 
+# CSS
 st.markdown("""
 <style>
-    .big-title {font-size: 80px !important; font-weight: bold; color: #006400; text-align: center; margin-bottom: 0px;}
-    .sub-title {font-size: 28px !important; color: #000000; text-align: center; margin-top: 5px; font-weight: normal;}
-    .hr-big {font-size: 70px !important; color: #006400; text-align: center; font-weight: bold;}
-    .diag-title {font-size: 32px !important; color: #006400;}
+    .big-title {font-size: 80px !important; font-weight: bold; text-align: center; margin-bottom: 0px;}
+    .sub-title {font-size: 28px !important; text-align: center; margin-top: 5px; font-weight: normal; opacity: 0.9;}
+    .hr-big {font-size: 70px !important; text-align: center; font-weight: bold;}
     body {background: linear-gradient(135deg, #e8f5e9, #f1f8e8);}
 </style>
 """, unsafe_allow_html=True)
 
-# Fondo sutil con ondas cardíacas (opcional, queda precioso)
-st.markdown("""
-<div style="position:fixed; top:0; left:0; width:100%; height:100%; opacity:0.03; pointer-events:none; 
-     background-image: url('https://i.imgur.com/5fX9X8k.png'); background-size: cover; z-index:-1;"></div>
-""", unsafe_allow_html=True)
+# ==================== ESTADO INICIAL SEGURO ====================
+if "data" not in st.session_state:
+    st.session_state.data = {
+        "I": [0]*600,
+        "II": [0]*600,
+        "III": [0]*600,
+        "hr": 0,
+        "features": {},
+        "probs": [25, 25, 25, 25]  # valor por defecto
+    }
 
-# ==================== TÍTULO Y SUBTÍTULO QUE CAMBIAN DE COLOR (SEGURIDAD TOTAL) ====================
+# ==================== COLOR SEGÚN DIAGNÓSTICO (sin errores) ====================
+idx = np.argmax(st.session_state.data["probs"])
+colores = ["#d32f2f", "#f57c00", "#c62828", "#2e7d32"]  # AFF, ARR, CHF, NSR
+color_actual = colores[idx]
 
-# Valor por defecto mientras no hay datos
-if "probs" not in st.session_state.data or len(st.session_state.data["probs"]) == 0:
-    color_diagnostico = "#006400"  # Verde bonito por defecto
-else:
-    idx = np.argmax(st.session_state.data["probs"])
-    colores = ["#d32f2f", "#f57c00", "#c62828", "#2e7d32"]  # AFF, ARR, CHF, NSR
-    color_diagnostico = colores[idx]
-
-# Título grande
-st.markdown(f'''
-<h1 style="color:{color_diagnostico}; font-size:80px; text-align:center; margin-bottom:0; font-weight:bold;">
-Vitals Link
-</h1>
-''', unsafe_allow_html=True)
-
-# Subtítulo
-st.markdown(f'''
-<h3 style="color:{color_diagnostico}; font-size:28px; text-align:center; margin-top:5px; font-weight:normal; opacity:0.9;">
-El guardián digital de tu ritmo cardíaco, conectado y seguro.
-</h3>
-''', unsafe_allow_html=True)
-
+# Título y subtítulo (ahora sí funciona desde el segundo 1)
+st.markdown(f'<h1 class="big-title" style="color:{color_actual};">Vitals Link</h1>', unsafe_allow_html=True)
+st.markdown(f'<h3 class="sub-title" style="color:{color_actual};">El guardián digital de tu ritmo cardíaco, conectado y seguro.</h3>', unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==================== CARGA DEL MODELO ====================
 modelo = joblib.load("modelo_ecg_random_forest_final.pkl")
 CLASES = ['Fibrilación Auricular', 'Arritmia', 'Insuficiencia Cardíaca', 'Ritmo Sinusal Normal']
 
-# Estado inicial
-if "data" not in st.session_state:
-    st.session_state.data = {
-        "I": [0]*600, "II": [0]*600, "III": [0]*600,
-        "hr": 0, "features": {}, "probs": [25,25,25,25]
-    }
-
-# ==================== API FASTAPI ====================
+# ==================== API ====================
 api = FastAPI()
 
 class DatosECG(BaseModel):
@@ -84,7 +66,6 @@ def recibir(d: DatosECG):
     return {"status": "ok"}
 
 # ==================== INTERFAZ ====================
-# 3 gráficas en fila
 col1, col2, col3 = st.columns(3)
 with col1:
     st.subheader("Derivación I")
@@ -93,23 +74,19 @@ with col2:
     st.subheader("Derivación II")
     st.line_chart(st.session_state.data["II"], height=220, use_container_width=True)
 with col3:
-    st.subheader("Derivación III (calculada)")
+    st.subheader("Derivación III")
     st.line_chart(st.session_state.data["III"], height=220, use_container_width=True)
 
-# Frecuencia cardíaca gigante
-st.markdown(f'<p class="hr-big">{st.session_state.data["hr"]} <small style="font-size:50px;">bpm</small></p>', 
-            unsafe_allow_html=True)
+st.markdown(f'<p class="hr-big" style="color:{color_actual};">{st.session_state.data["hr"]} <small style="font-size:50px;">bpm</small></p>', unsafe_allow_html=True)
 
-# Tabla de 12 features
 st.subheader("12 Features Extraídos")
 if st.session_state.data["features"]:
     feat_df = pd.DataFrame.from_dict(st.session_state.data["features"], orient='index', columns=['Valor'])
     st.dataframe(feat_df.style.format("{:.4f}"), use_container_width=True)
 else:
-    st.info("Esperando datos del ESP32...")
+    st.info("Esperando señal del ESP32...")
 
-# Diagnóstico + justificación
-st.markdown("<br><div class='diag-title'>Diagnóstico Automático</div>", unsafe_allow_html=True)
+st.subheader("Diagnóstico Automático")
 probs = st.session_state.data["probs"]
 idx = np.argmax(probs)
 patologia = CLASES[idx]
@@ -117,18 +94,9 @@ confianza = probs[idx]
 
 colA, colB = st.columns([2, 3])
 with colA:
-    colores = ["#d32f2f", "#f57c00", "#388e3c", "#2e7d32"]
-    st.markdown(f"<h2 style='color:{colores[idx]}; text-align:center;'>{patologia}<br>{confianza:.1f}%</h2>", 
-                unsafe_allow_html=True)
-
+    st.markdown(f"<h2 style='color:{color_actual}; text-align:center;'>{patologia}<br>{confianza:.1f}%</h2>", unsafe_allow_html=True)
 with colB:
-    just = f"""
-    • Frecuencia cardíaca: {st.session_state.data['hr']} bpm  
-    • Duración QRS: {st.session_state.data['features'].get('QRSseg',0):.3f} s → {'prolongado' if st.session_state.data['features'].get('QRSseg',0)>0.11 else 'normal'}  
-    • Variabilidad RR (SDRR): {st.session_state.data['features'].get('SDRR',0):.3f} → {'alta' if st.session_state.data['features'].get('SDRR',0)>0.06 else 'normal'}  
-    → Conclusión: el modelo detecta **{patologia.lower()}** con alta confianza.
-    """
-    st.write(just)
+    st.write(f"Frecuencia: {st.session_state.data['hr']} bpm | QRS: {st.session_state.data['features'].get('QRSseg',0):.3f}s | SDRR: {st.session_state.data['features'].get('SDRR',0):.3f}")
 
 # ==================== SERVIDOR ====================
 import uvicorn
